@@ -1,28 +1,32 @@
 import numpy as np
 import typing
 
+
 class Protax:
 
     # TODO make proper constructor
     def __init__(self):
-        self.params = np.array([[]])    # betas
-        self.q = 0                      # mislabeling rate
+        self.params = None          # betas
+        self.q = -1                 # mislabeling rate
 
-    def get_branch_prob(self, X, beta):
+    def get_branch_prob(self, node, X):
         """
         return probability vector for each branch under a node.
         """
 
-        # TODO check for correctness
-        # TODO do proper type annotations
+        # TODO check for correctness vs C protax
+        # get weighted sums
+        beta = self.params[node.layer]
         n_z, m = X.shape
-        z = np.exp(X @ beta)
-        weight_mask = np.ones((n_z, 1))
-        weight_mask[0] = n_z  # TODO what's the expected number of missing branches?
+        exp_z = np.exp(X @ beta)
 
-        normalization_factor = weight_mask @ z  # TODO prevent div by 0
-        return z / normalization_factor
+        # apply weights in softmax computation
+        weight_mask = np.ones(n_z)
+        weight_mask[0] = node.u_z
+        norm_factor = weight_mask @ exp_z  # TODO prevent div by 0
+        w_exp_z = exp_z * weight_mask
 
+        return w_exp_z / norm_factor
 
     def classify(self, node, query):
         """
@@ -30,25 +34,30 @@ class Protax:
         """
         
         # TODO compute X
-        branch_p = get_branch_prob(node.X)
+        branch_p = self.get_branch_prob(node, query)
 
         # TODO can this be vectorized? slow version for now
         for c in range(0, len(node.children)):
             node.children[c].prob = node.prob*branch_p[c]
-            classify(node.children[c], query)
+            self.classify(node.children[c], query)
         
         if len(node.children) == 0:
-            return node.prior*q + (1-q)*node.prob
+            return node.prior*self.q + (1-self.q)*node.prob
+
+    def set_params(self, b, q):
+        self.params = b
+        self.q = q
 
 
 # ============= MISC functions ===============
-
-def seq_dist(a, b, seq_len):
-
+def seq_dist(a, b):
+    """
+    sequence distance between a and b. Lengths must match
+    """
     ok_positions = 0
     mismatches = 0
 
-    for i in range(seq_len):
+    for i in range(len(a)):
         if a[i] in "ATGC" and b[i] in "ATGC":
             ok_positions += 1
             mismatches += int(a[i] != b[i])
@@ -56,3 +65,14 @@ def seq_dist(a, b, seq_len):
     if ok_positions == 0:
         return 1.0
     return mismatches/ok_positions
+
+
+def get_predictors(self, node, query):
+    """
+    Compute X to feed into get_branch_prob
+    """
+    nz = len(node.children)
+    m = 3
+    res = np.zeros((nz, m))
+
+    return res

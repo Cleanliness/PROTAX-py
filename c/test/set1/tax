@@ -1,0 +1,9 @@
+0	0	0	root	1
+1	0	1	unk	0.2
+2	0	1	fam1	0.3
+3	0	1	fam2	0.5
+4	2	2	fam1,unk	0.1
+5	2	2	fam1,bob    0.2
+6	3	2	fam2,unk	0.3
+7	3	2	fam2,joe	0.1
+8	3	2	fam2,billy	0.1

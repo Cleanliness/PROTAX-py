@@ -1,0 +1,59 @@
+#################################################
+# taxonomy: nid pid level tname prior_probability
+#################################################
+
+# unk (unknown taxon) must be first child node of each parent node
+# here few sample lines from full taxonomy:
+
+0	0	0	root
+1	0	1	unk
+2	0	1	Acanthocephala
+3	0	1	Acoelomorpha
+4	0	1	Annelida
+5	0	1	Arthropoda
+...
+46      5       2       Arthropoda,unk
+47      5       2       Arthropoda,Arachnida
+48      5       2       Arthropoda,Branchiopoda
+...
+51      5       2       Arthropoda,Collembola
+52      5       2       Arthropoda,Diplopoda
+53      5       2       Arthropoda,Diplura
+...
+270     52      3       Arthropoda,Diplopoda,Polydesmida
+271     52      3       Arthropoda,Diplopoda,Polyxenida
+272     52      3       Arthropoda,Diplopoda,Polyzoniida
+...
+1736    271     4       Arthropoda,Diplopoda,Polyxenida,unk
+1737    271     4       Arthropoda,Diplopoda,Polyxenida,Lophoproctidae
+1738    271     4       Arthropoda,Diplopoda,Polyxenida,Polyxenidae
+
+########################################
+# seqid2tax: seqid maxlevel tname
+########################################
+
+# maxlevel is the maximum number of taxonomic levels in seqid's annotation
+# here examples of some seqid annotations:
+
+BCBN917-05      4       Chordata,Mammalia,Chiroptera,Phyllostomidae
+MHMYB764-09     3       Arthropoda,Insecta,Lepidoptera
+MHAYA088-06     4       Arthropoda,Insecta,Lepidoptera,Depressariidae
+.
+.
+.
+MYARB668-18	4	Chordata,Reptilia,Squamata,Scincidae
+RHY122-18	4	Arthropoda,Insecta,Hymenoptera,Formicidae
+BUCSD005-18	4	Arthropoda,Insecta,Lepidoptera,Bucculatricidae
+GMIAF1242-18	3	Arthropoda,Insecta,Diptera
+
+########################################
+# refs.aln: FASTA format
+########################################
+
+# each sequence must be in only one line, A,C,G,T must be in CAPITAL letters, other characters are not counted
+# data must be in global alignment, the length of alignment is the same for all sequences, e.g.:
+
+>LEFIJ6337-17   Arthropoda,Insecta,Hymenoptera,Ichneumonidae
+---------------------------------------ATTTTATATTTCATATTTGGTATATGAAGAGGAATAATTGGATCCTCAATA---AGATTAATTATTCGAATAGAACTAGGGAATCCAGGATATTTAATTAATAAT---GATCAAATTTATAATTCAATTGTTACAGCTCATGCATTTATTATAATTTTTTTTATAGTTATACCTATTATAATTGGAGGATTTGGAAATTGATTAGTCCCATTAATA---TTAGGAGCCCCCGATATAGCTTTCCCACGAATAAACAATATAAGATTTTGATTATTACCTCCCTCAATTCTAATTTTAATTAGAGGATCATTAACTAATCAAGGTGCAGGAACAGGATGAACTGTTTATCCCCCATTATCATTAAATTTAAATCATGAAGGATTATCAATTGATTTATCA---ATTTTTTCACTTCATATAGCCGGAATATCTTCAATCATAGGGGCCATTAATTTTATTTCAACTATTTTAAATATATATCCTATTAATATAAAATTTGAACAATTAACCCTATTTACATGATCAATTTTAATTACAACAATTTTATTATTATTAGCAGTTCCAGTTTTAGCTGGA---GCAATTACCATATTATTAACTGATCGAAATTTAAATACCTCATTTTTTGACCCATCAGGGGGAGGAGACCCAATTTTATACCAACATTTA-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+>EWPHI208-08    Annelida,Clitellata,Haplotaxida,Megascolecidae
+---------------------------------------ACTCTATATTTTATTCTAGGGGTTTGAGCCGGAATAATTGGGGCGGGAATA---AGACTCCTTATTCGAATCGAACTAAGACAACCAGGATCATTTCTAGGCAGA---GATCAATTATATAATACTATTGTTACTGCACACGCATTCGTTATAATTTTCTTCTTAGTTATACCAGTATTTATTGGCGGGTTTGGAAATTGATTACTCCCACTTATA---CTAGGAGCTCCTGACATAGCTTTCCCACGACTAAACAACTTAAGATTCTGATTACTTCCCCCTTCACTAATTCTCTTAGTATCTTCTGCAGCTGTAGAAAAAGGAGCTGGAACCGGATGAACAGTATATCCCCCATTAGCAAGAAATATCGCACACGCTGGGCCTTCAGTAGACTTA---GCTATTTTTTCACTACATTTAGCAGGTGCCTCATCAATTCTTGGGGCTATTAACTTTATTACAACAGTCATCAACATACGTTGGTCAGGCTTACGACTAGAACGAATTCCTCTATTCGTATGAGCAGTAGTTATTACAGTAGTACTTTTACTACTTTCACTCCCCGTTCTAGCTGGA---GCCATTACAATACTATTAACAGATCGAAACCTAAACACATCGTTCTTTGACCCAGCAGGAGGAGGGGACCCGATTCTATACCAACACCTA-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

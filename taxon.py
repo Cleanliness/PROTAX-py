@@ -28,3 +28,9 @@ class taxNode:
                 res.extend(t.get_probs())
 
         return res
+
+    def __str__(self):
+        return str(self.prob)
+
+    def __repr__(self):
+        return str(self.prob)

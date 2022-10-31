@@ -3,6 +3,11 @@ from model import Protax, seq_dist
 import numpy as np
 import pytest
 
+"""
+Some basic sanity checks on model classification, and 
+distance computation
+"""
+
 
 def test_taxon_init():
     """
@@ -61,6 +66,9 @@ def test_outcome_small():
     m = Protax()
     m.set_params(b, q)
 
+    sc = np.ones((2, 4))
+    sc[:, [0, 2]] = 0
+    m.set_scaling(sc)
     root = make_small_tree()
 
     m.classify(root, "ATAGCG")
@@ -78,6 +86,10 @@ def test_outcome_med():
     q = 0.0
     m = Protax()
     m.set_params(b, q)
+
+    sc = np.ones((2, 4))
+    sc[:, [0, 2]] = 0
+    m.set_scaling(sc)
 
     root = make_med_tree()
 

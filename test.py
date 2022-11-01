@@ -1,12 +1,57 @@
 from taxon import taxNode
-from model import Protax, seq_dist
+from model import *
 import numpy as np
+import protax_utils
 import pytest
 
 """
 Some basic sanity checks on model classification, and 
 distance computation
 """
+
+
+def test_bseq_dist_match():
+    """
+    sequence distance for completely matching sequences
+    """
+    a = protax_utils.get_seq_bits("AAAAAAAAAAA")
+    b = protax_utils.get_seq_bits("AAAAAAAAAAA")
+
+    d = seq_dist_bitw(a, b, 11)
+    assert d == 0
+
+
+def test_bseq_dist_no_match():
+    """
+    sequence distance for completely matching sequences
+    """
+    a = protax_utils.get_seq_bits("AAAAAAAAAAA")
+    b = protax_utils.get_seq_bits("TTTTTTTTTTT")
+
+    d = seq_dist_bitw(a, b, 11)
+    assert d == 1.0
+
+
+def test_seq_dist_match():
+    """
+    sequence distance for completely matching sequences
+    """
+    a = "AAAAAAAAAAA"
+    b = "AAAAAAAAAAA"
+
+    d = seq_dist(a, b)
+    assert d == 0
+
+
+def test_seq_dist_no_match():
+    """
+    sequence distance for completely matching sequences
+    """
+    a = "AAAAAAAAAAA"
+    b = "TTTTTTTTTTT"
+
+    d = seq_dist(a, b)
+    assert d == 1.0
 
 
 def test_taxon_init():
@@ -65,13 +110,15 @@ def test_outcome_small():
     q = 0.0
     m = Protax()
     m.set_params(b, q)
-
+    ref_seqs = ["TTTTTT", "GGGGGG", "CCCCCC", "AAAGGG"]
+    m.set_reference_sequences([protax_utils.get_seq_bits(s) for s in ref_seqs],
+                              [6 for i in range(7)])
     sc = np.ones((2, 4))
     sc[:, [0, 2]] = 0
     m.set_scaling(sc)
     root = make_small_tree()
 
-    m.classify(root, "ATAGCG")
+    m.classify(root, protax_utils.get_seq_bits("ATAGCG"))
     res = root.get_probs()
 
     # because there are 2 layers in the tree
@@ -87,51 +134,33 @@ def test_outcome_med():
     m = Protax()
     m.set_params(b, q)
 
+    ref_seqs = ["TTTTTT", "GGGGGG", "CCCCCC", "AAAGGG", "ATGCGA", "ATGCCC", "ATATTA"]
+    m.set_reference_sequences([protax_utils.get_seq_bits(s) for s in ref_seqs],
+                              [6 for i in range(7)])
+
     sc = np.ones((2, 4))
     sc[:, [0, 2]] = 0
     m.set_scaling(sc)
 
     root = make_med_tree()
-
-    m.classify(root, "ATAGCG")
+    m.classify(root, protax_utils.get_seq_bits("ATAGCG"))
     res = root.get_probs()
 
     assert sum(res) == 3
 
 
-def test_seq_dist_match():
-    """
-    sequence distance for completely matching sequences
-    """
-    a = "AAAAAAAAAAA"
-    b = "AAAAAAAAAAA"
-
-    d = seq_dist(a, b)
-    assert d == 0
-
-
-def test_seq_dist_no_match():
-    """
-    sequence distance for completely matching sequences
-    """
-    a = "AAAAAAAAAAA"
-    b = "TTTTTTTTTTT"
-
-    d = seq_dist(a, b)
-    assert d == 1.0
-
-
 # ========= Helpers ===========
 def make_small_tree():
+
     root = taxNode()
-    root.ref_seqs.append("AAAAAA")
+    root.ref_indices.append(3)
     root.prior = 1
     root.prob = 1
 
-    for i in ["TTTTTT", "GGGGGG", "CCCCCC", "AAAGGG"]:
+    for i in range(4):
         curr = taxNode()
         curr.prior = 0.25
-        curr.ref_seqs.append(i)
+        curr.ref_indices.append(i)
         root.add_children([curr])
 
     return root
@@ -139,24 +168,24 @@ def make_small_tree():
 
 def make_med_tree():
     root = taxNode()
-    root.ref_seqs.append("AAAAAA")
+    root.ref_indices.append(3)
     root.prior = 1
     root.prob = 1
 
     children = []
 
-    for i in ["TTTTTT", "GGGGGG", "CCCCCC", "AAAGGG"]:
+    for i in range(4):
         curr = taxNode()
         curr.prior = 0.25
         children.append(curr)
-        curr.ref_seqs.append(i)
+        curr.ref_indices.append(i)
         root.add_children([curr])
 
     for c in children:
-        for cc in ["ATGCGA", "ATGCCC", "ATATTA"]:
+        for cc in range(4, 7):
             curr = taxNode()
             curr.prior = 0.0625
-            curr.ref_seqs.append(cc)
+            curr.ref_indices.append(cc)
             c.add_children([curr])
 
     return root

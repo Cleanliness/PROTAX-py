@@ -10,6 +10,8 @@ class Protax:
         self.scaling = None                       # scaling factors
         self.q = 0                                # mislabeling rate
         self.predictor = self.seq_dist_predictor  # sequence dist based predictor
+        self.refs = []                            # reference sequence bit vectors
+        self.ref_lengths = []                     # lengths of all reference sequences
 
     def get_branch_prob(self, node, X):
         """
@@ -37,10 +39,10 @@ class Protax:
         if len(node.children) == 0:
             return
 
-        X = self.predictor(node, query)
+        X = self.predictor(node, query)  # slowest step
         branch_p = self.get_branch_prob(node, X)
-
         csum = 0.0
+
         # get joint probability of all children
         for c in range(0, len(node.children)):
             node.children[c].prob = node.children[c].prior*branch_p[c]
@@ -58,6 +60,10 @@ class Protax:
     def set_scaling(self, s):
         self.scaling = s
 
+    def set_reference_sequences(self, refs, lens):
+        self.refs = refs
+        self.ref_lengths = lens
+
     def seq_dist_predictor(self, node, query):
         """
         sequence based predictor for generating X to feed into get_branch_prob
@@ -68,21 +74,21 @@ class Protax:
 
         if nz == 1:
             return res
-        mins = np.array([])
+
         for i, c in enumerate(node.children[1:], start=1):
             # no reference sequences
-            if len(c.ref_seqs) == 0:
+            if len(c.ref_indices) == 0:
                 res[i, 0] = 1
 
             # has reference sequences
             else:
-                dists = np.array([seq_dist(r, query) for r in c.ref_seqs])
+                dists = np.array([seq_dist_bitw(self.refs[r], query, self.ref_lengths[r]) for r in c.ref_indices])
                 res[i, 0:2] = 1
-                if len(c.ref_seqs) == 1:
+                if len(c.ref_indices) == 1:
                     res[i, 2] = (dists[0] - sc[0])/sc[1]
                     res[i, 3] = 1.0
                 else:
-                    res[i, 2:4] = np.partition(mins, dists)[:2]
+                    res[i, 2:4] = np.partition(dists, 2)[:2]
                     res[i, 2] = (res[i, 2]-sc[2])/sc[3]
                     res[i, 3] = 1.0
 
@@ -92,11 +98,11 @@ class Protax:
 # ============= MISC functions ===============
 def seq_dist(a, b):
     """
-    sequence distance between a and b. Lengths must match
+    sequence distance between sequences a and b. Lengths must match.
+    a,b are bit vectors
     """
     ok_positions = 0
     mismatches = 0
-
     for i in range(len(a)):
         if a[i] in "ATGC" and b[i] in "ATGC":
             ok_positions += 1
@@ -105,3 +111,9 @@ def seq_dist(a, b):
     if ok_positions == 0:
         return 1.0
     return mismatches/ok_positions
+
+
+def seq_dist_bitw(a, b, size):
+    match = np.bitwise_and(a, b)
+    match_tot = sum(np.unpackbits(match))
+    return (size - match_tot) / size

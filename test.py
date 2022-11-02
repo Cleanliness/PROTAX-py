@@ -10,6 +10,18 @@ distance computation
 """
 
 
+def test_seq_dist_vectorized():
+    seqs = ["TTTTTT", "GGGGGG", "CCCCCC", "AAAGGG"]
+    seq_bit = []
+    for s in seqs:
+        seq_bit.append(protax_utils.get_seq_bits(s))
+
+    lens = np.array([6, 6, 6, 6])
+    q = protax_utils.get_seq_bits("ATGGCG")
+    res = seq_dist_vectorized(q, np.array(seq_bit), lens)
+    assert np.all(res == np.array([5/6, 0.5, 5/6, 0.5]))
+
+
 def test_bseq_dist_match():
     """
     sequence distance for completely matching sequences
@@ -154,6 +166,7 @@ def make_small_tree():
 
     root = taxNode()
     root.ref_indices.append(3)
+    root.ref_indices = np.array(root.ref_indices)
     root.prior = 1
     root.prob = 1
 
@@ -161,6 +174,7 @@ def make_small_tree():
         curr = taxNode()
         curr.prior = 0.25
         curr.ref_indices.append(i)
+        curr.ref_indices = np.array(curr.ref_indices)
         root.add_children([curr])
 
     return root
@@ -169,6 +183,7 @@ def make_small_tree():
 def make_med_tree():
     root = taxNode()
     root.ref_indices.append(3)
+    root.ref_indices = np.array(root.ref_indices)
     root.prior = 1
     root.prob = 1
 
@@ -179,6 +194,7 @@ def make_med_tree():
         curr.prior = 0.25
         children.append(curr)
         curr.ref_indices.append(i)
+        curr.ref_indices = np.array(curr.ref_indices)
         root.add_children([curr])
 
     for c in children:
@@ -186,6 +202,7 @@ def make_med_tree():
             curr = taxNode()
             curr.prior = 0.0625
             curr.ref_indices.append(cc)
+            curr.ref_indices = np.array(curr.ref_indices)
             c.add_children([curr])
 
     return root

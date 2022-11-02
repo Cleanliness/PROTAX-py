@@ -1,5 +1,6 @@
 import numpy as np
 import typing
+import time
 
 
 class Protax:
@@ -82,9 +83,20 @@ class Protax:
 
             # has reference sequences
             else:
-                dists = np.array([seq_dist_bitw(self.refs[r], query, self.ref_lengths[r]) for r in c.ref_indices])
+                start_time = time.time()
+                c_refs = np.take(self.refs, c.ref_indices, axis=0)
+                print("--- %s seconds to unpack ---" % (time.time() - start_time), end='\n')
+
+                start_time = time.time()
+                lens = np.take(self.ref_lengths, c.ref_indices)
+                print("--- %s seconds to take lengths ---" % (time.time() - start_time), end='\n')
+
+                start_time = time.time()
+                dists = seq_dist_vectorized(query, c_refs, lens)
+                print("computed " + str(dists.size) + " distances in " + str(time.time() - start_time))
+
                 res[i, 0:2] = 1
-                if len(c.ref_indices) == 1:
+                if c.ref_indices.size == 1:
                     res[i, 2] = (dists[0] - sc[0])/sc[1]
                     res[i, 3] = 1.0
                 else:
@@ -117,3 +129,9 @@ def seq_dist_bitw(a, b, size):
     match = np.bitwise_and(a, b)
     match_tot = sum(np.unpackbits(match))
     return (size - match_tot) / size
+
+
+def seq_dist_vectorized(q, seqs, sizes):
+    matches = np.bitwise_and(q, seqs)
+    match_tots = np.sum(np.unpackbits(matches, axis=1), axis=1)
+    return (sizes - match_tots) / sizes

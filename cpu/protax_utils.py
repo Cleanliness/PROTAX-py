@@ -2,79 +2,47 @@
 Functions for reading from files used by PROTAX
 """
 import model
+from model import Protax
 import numpy as np
-from taxon import TaxNode
+from taxon import taxNode
 import time
-import jax
-import jax.numpy as jnp
 
 
 def read_params(pdir):
-    """
-    Read parameters from file
-    """
-    print("reading parameters")
     f = open(pdir)
     res = []
     for l in f.readlines():
-        res.append(jnp.fromstring(l, sep=" "))
-    return jnp.array(res)
+        res.append(l.split(" "))
+    return np.array(res).astype("float64")
 
 
 def read_scalings(pdir):
-    print("reading scalings")
     f = open(pdir)
     res = []
     for l in f.readlines():
         res.append(l.split(" "))
 
     res = np.array(res)[:, 1::2].astype("float64")
-    return jnp.array(res)
-
-
-def read_taxonomy(tdir):
-    print("reading taxonomy file")
-    f = open(tdir)
-    node_dat = f.readlines()
-
-    res = {"prior": np.zeros((len(node_dat))),
-           "prob": np.zeros((len(node_dat))),
-           "children": [[] for i in range(len(node_dat))],
-           "node_refs": [jnp.array([]) for i in range(len(node_dat))],
-           "u_z": np.zeros((len(node_dat))),
-           "unk": np.zeros((len(node_dat))).astype(bool),
-           "layer": np.zeros((len(node_dat))).astype(np.int8),
-           "refs": None,
-           "ref_lens": None
-           }
-
-    for l in node_dat:
-        l = l.strip("\n")
-
-        # collecting taxon data
-        nid, pid, lvl, name, prior, d = l.split("\t")
-        nid, pid, lvl, prior = (int(nid), int(pid), int(lvl), float(prior))
-        name = name.split(",")[-1]
-
-        # setting data
-        res["prior"][nid] = prior
-        res["layer"][nid] = lvl
-        res["unk"][nid] = name == 'unk'
-
-        if nid != pid:
-            res["children"][pid].append(nid)
-
-    # converting to jax arrays
-    for i in range(len(res["children"])):
-        res["children"][i] = jnp.array(np.array(res["children"][i]))
-    res["prior"] = jnp.array(res["prior"])
-    res["layer"] = jnp.array(res["layer"])
-    res["unk"] = jnp.array(res["unk"])
     return res
 
 
+def read_taxonomy(tdir):
+    f = open(tdir)
+    node_dat = f.readlines()
+    nodes = [None for i in range(len(node_dat))]
+    for l in node_dat:
+        l = l.strip("\n")
+        nid, pid, lvl, name, prior, d = l.split("\t")
+        nid, pid, prior = (int(nid), int(pid), float(prior))
+        name = name.split(",")[-1]
+
+        curr = taxNode(prior, name == 'unk', name)
+        nodes[nid] = curr
+        nodes[pid].add_child(curr)
+    return nodes
+
+
 def read_refs(ref_dir):
-    print("reading reference sequences")
     f = open(ref_dir)
     ref_list = []
     ref_lens = []
@@ -91,7 +59,7 @@ def read_refs(ref_dir):
         ref_lens.append(len(seqs))
         print('\r' + str(i), end='')
         i += 1
-    return jnp.array(np.array(ref_list)), jnp.array(np.array(ref_lens))
+    return ref_list, ref_lens
 
 
 def get_seq_bits(seq_str):
@@ -106,14 +74,16 @@ def get_seq_bits(seq_str):
     return seq_bits
 
 
-def assign_refs(tree, seq2tax_dir):
-    print("assigning reference sequences to taxa")
+def assign_refs(nodes, seq2tax_dir):
     f = open(seq2tax_dir)
     for l in f.readlines():
         nid, num_refs, ref_idx = l.split('\t')
         nid = int(nid)
-        seqs = jnp.array(np.fromstring(ref_idx, sep=" ").astype(int))
-        tree["node_refs"][nid] = jax.device_put(seqs)
+        num_refs = int(num_refs)
+        seqs = np.array(ref_idx.split(" ")).astype(int)
+
+        nodes[nid].set_ref_seqs(seqs)
+    bb = 3
 
 
 if __name__ == "__main__":
@@ -122,22 +92,21 @@ if __name__ == "__main__":
     # reading model info
     beta = read_params(testdir + "\\model.pars")
     scalings = read_scalings(testdir + "\\model.scs")
-    tree = read_taxonomy(testdir + "\\taxonomy.priors")
+    all_nodes = read_taxonomy(testdir + "\\taxonomy.priors")
     refs, ref_lens = read_refs(testdir + "\\refs.aln")
-    tree["refs"] = jax.device_put(refs)
-    tree["ref_lens"] = jax.device_put(ref_lens)
-    tree["prior"] = jax.device_put(tree["prior"])
-    tree["prob"] = jnp.array(tree["prob"])
-    tree["prob"] = tree["prob"].at[0].set(1)
-    assign_refs(tree, testdir + "\\model.rseqs.numeric")
+    assign_refs(all_nodes, testdir + "\\model.rseqs.numeric")
 
-    params = {"beta": beta, "scaling": scalings}
+    # set up model
+    m = Protax()
+    m.set_params(beta, 0)
+    m.set_scaling(scalings)
+    m.set_reference_sequences(np.array(refs), np.array(ref_lens))
 
     # test query
     q = "-ACATTATATTTTATATTTGGAGCTTGAGCTGGGATAGTTGGAACAAGATTAAGAATTCTTATCCGAACTGAACTTGGTACCCCCGGGTCACTTATTGGAGATGACCAGATTTATAATGTAATTGTTACAGCTCACGCTTTTGTTATAATTTTTTTTATAGTTATACCAATTTTAATTGGTGGTTTCGGAAATTGACTTGTCCCATTAATATTAGGGGCACCTGATATAGCCTTCCCCCGAATAAATAACATAAGATTCTGGTTACTCCCCCCATCATTAACCCTTCTTTTAATAAGAAGAATAGTAGAAAGAGGAGCAGGAACAGGTTGAACAGTTTATCCTCCCTTGGCCTCAAATATTGCACATGGAGGGGCATCTGTCGATTTAGCAATTTTTAGTTTACATCTAGCAGGAATCTCCTCTATTTTAGGAGCAGTAAATTTTATTACAACAATTATCAATATACGAGCCCCTCAAATAAGGTTTGACCAAATACCTCTTTTTGTTTGAGCTGTGGGAATCACAGCTCTCCTTCTTCTTCTTTCTCTTCCAGTTTTAGCCGGAGCTATCACTATATTATTAACAGACCGGAATTTAAATACATCATTTTTTGACCCAGCAGGAGGTGGTGATCCTATTTTATACCAACATTTATTT"
     q = get_seq_bits(q)
     start_time = time.time()
-    model.classify(q, 0, params, tree)
+    m.classify(all_nodes[0], q)
     print("classification took " + str(time.time() - start_time))
 
 

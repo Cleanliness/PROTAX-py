@@ -37,9 +37,6 @@ def classify(query, nid, params, tree):
         # getting relevant children and reference indices
         start_time = time.time()
         children = tree["children"][curr]
-
-        # this is wrong
-        ref_i = tree["node_refs"][curr]
         print("Indexing took " + str(time.time() - start_time))
 
         # computing probability of all children nodes
@@ -86,6 +83,7 @@ def compute_probs(X, params, tree, nid, children):
     print("probability assignment took " + str(time.time() - start_time))
 
 
+@jax.jit
 def get_predictors(q: jnp.ndarray, nid, tree, params, row, ref_i, X):
     """
     Get the predictors of a single taxon node.
@@ -98,18 +96,15 @@ def get_predictors(q: jnp.ndarray, nid, tree, params, row, ref_i, X):
 
     # get 2 min dists
     dists = seq_dist(q, refs, ref_lens)
-    d1 = jnp.argmin(dists)
-
-    # TODO figure out how to remove this for jit
-    if dists.size == 1:
-        d2 = dists.at[d1].get()
-    else:
-        d2 = jnp.min(jnp.delete(dists, d1))
+    d_vals, d_inds = jax.lax.top_k(jnp.multiply(dists, -1), int(dists.size > 0) + int(dists.size >= 2))
+    d1 = d_inds.at[0].get()
+    d_inds = jnp.append(d_inds, d1)
+    d2 = d_inds.at[1].get()
 
     # return row
     X = X.at[row, 0:2].set(1)
     X = X.at[row, 2].set(dists.at[d1].get())
-    X = X.at[row, 3].set(d2)
+    X = X.at[row, 3].set(dists.at[d2].get())
     return X
 
 

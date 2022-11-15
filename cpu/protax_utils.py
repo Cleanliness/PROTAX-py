@@ -2,7 +2,7 @@
 Functions for reading from files used by PROTAX
 """
 import model
-from model import Protax
+from model import Protax, seq_dist_vectorized
 import numpy as np
 from taxon import taxNode
 import time
@@ -107,6 +107,7 @@ if __name__ == "__main__":
     q = get_seq_bits(q)
     start_time = time.time()
     m.classify(all_nodes[0], q)
+    # seq_dist_vectorized(q, refs, ref_lens)
     print("classification took " + str(time.time() - start_time))
 
 

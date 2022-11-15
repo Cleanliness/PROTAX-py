@@ -52,7 +52,7 @@ class Protax:
         # normalize, i.e apply marginalized joint prob over outcomes
         for c in range(0, len(node.children)):
             node.children[c].prob = node.children[c].prob*node.prob/csum
-            self.classify(node.children[c], query)
+            # self.classify(node.children[c], query)
 
     def set_params(self, b, q):
         self.params = b

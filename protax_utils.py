@@ -3,10 +3,10 @@ Functions for reading from files used by PROTAX
 """
 import model
 import numpy as np
-from taxon import TaxNode
 import time
 import jax
 import jax.numpy as jnp
+from tree import TaxTree
 
 
 def read_params(pdir):
@@ -22,6 +22,9 @@ def read_params(pdir):
 
 
 def read_scalings(pdir):
+    """
+    Read scalings from file
+    """
     print("reading scalings")
     f = open(pdir)
     res = []
@@ -33,20 +36,21 @@ def read_scalings(pdir):
 
 
 def read_taxonomy(tdir):
+    """
+    Read taxonomy tree from file
+    """
     print("reading taxonomy file")
     f = open(tdir)
     node_dat = f.readlines()
 
-    res = {"prior": np.zeros((len(node_dat))),
-           "prob": np.zeros((len(node_dat))),
-           "children": [[] for i in range(len(node_dat))],
-           "node_refs": [jnp.array([]) for i in range(len(node_dat))],
-           "u_z": np.zeros((len(node_dat))),
-           "unk": np.zeros((len(node_dat))).astype(bool),
-           "layer": np.zeros((len(node_dat))).astype(np.int8),
-           "refs": None,
-           "ref_lens": None
-           }
+    # making result arrays
+    N = len(node_dat)
+    N_packed = np.packbits(np.zeros((1, N), dtype=bool), axis=1).shape[1]
+    res = np.zeros((N, N_packed), dtype=np.uint8)
+    unks = np.zeros(N, dtype=bool)
+    priors = np.zeros(N)
+    layers = np.zeros(N, dtype=int)
+    ch_num = np.zeros(N, dtype=int)
 
     for l in node_dat:
         l = l.strip("\n")
@@ -56,24 +60,30 @@ def read_taxonomy(tdir):
         nid, pid, lvl, prior = (int(nid), int(pid), int(lvl), float(prior))
         name = name.split(",")[-1]
 
-        # setting data
-        res["prior"][nid] = prior
-        res["layer"][nid] = lvl
-        res["unk"][nid] = name == 'unk'
-
         if nid != pid:
-            res["children"][pid].append(nid)
-
-    # converting to jax arrays
-    for i in range(len(res["children"])):
-        res["children"][i] = jnp.array(np.array(res["children"][i]))
-    res["prior"] = jnp.array(res["prior"])
-    res["layer"] = jnp.array(res["layer"])
-    res["unk"] = jnp.array(res["unk"])
-    return res
+            row = np.unpackbits(res[pid])
+            row[nid] = 1
+            res[pid] = np.packbits(row)
+        
+        # information about node
+        unks[nid] = name=="unk"
+        layers[nid] = lvl
+        priors[nid] = prior
+        ch_num[pid] += 1
+    
+    # converting to jax
+    res = jnp.array(res)
+    unks = jnp.array(unks)
+    layers = jnp.array(layers)
+    priors = jnp.array(priors)
+    ch_num = jnp.array(ch_num)
+    return res, unks, layers, priors, ch_num
 
 
 def read_refs(ref_dir):
+    """
+    Read reference sequences from file
+    """
     print("reading reference sequences")
     f = open(ref_dir)
     ref_list = []
@@ -91,10 +101,36 @@ def read_refs(ref_dir):
         ref_lens.append(len(seqs))
         print('\r' + str(i), end='')
         i += 1
-    return np.array(ref_list), np.array(ref_lens)
 
+    # converting to jax array
+    return jnp.array(np.array(ref_list)), jnp.array(np.array(ref_lens))
+
+
+def assign_refs(seq2tax_dir, N, R):
+    """
+    Assign reference sequences to nodes from file
+    """
+    print("assigning reference sequences to taxa")
+    f = open(seq2tax_dir)
+
+    R_packed = np.packbits(np.zeros((1, R), dtype=bool), axis=1).shape[1]
+    res = np.zeros((N, R_packed), dtype=np.uint8)
+
+    # assigning ref seq indices
+    for n, l in enumerate(f.readlines()):
+        nid, num_refs, ref_idx = l.split('\t')
+        nid = int(nid)
+        seqs = np.fromstring(ref_idx, sep=" ").astype(int)
+        row = np.unpackbits(res[n])
+        row[seqs] = 1
+        res[n] = np.packbits(row)
+
+    return jnp.array(res)
 
 def get_seq_bits(seq_str):
+    """
+    Convert seqence string to bit representation
+    """
     seq_chars = np.frombuffer(seq_str.encode('ascii'), np.int8)
     a = seq_chars == 65
     t = seq_chars == 84
@@ -106,41 +142,40 @@ def get_seq_bits(seq_str):
     return seq_bits
 
 
-def assign_refs(tree, seq2tax_dir):
-    print("assigning reference sequences to taxa")
-    f = open(seq2tax_dir)
-    for l in f.readlines():
-        nid, num_refs, ref_idx = l.split('\t')
-        nid = int(nid)
-        seqs = jnp.array(np.fromstring(ref_idx, sep=" ").astype(int))
-        tree["node_refs"][nid] = jax.device_put(seqs)
-
-
 if __name__ == "__main__":
-    testdir = r"C:\Users\mli\Documents\roy\modelCOIfull"
+    testdir = r"/h/royga/Documents/PROTAX-dsets/30k_small"
 
     # reading model info
-    beta = read_params(testdir + "\\model.pars")
-    scalings = read_scalings(testdir + "\\model.scs")
-    tree = read_taxonomy(testdir + "\\taxonomy.priors")
-    refs, ref_lens = read_refs(testdir + "\\refs.aln")
-    tree["refs"] = jax.device_put(refs)
-    tree["ref_lens"] = jax.device_put(ref_lens)
-    tree["prior"] = jax.device_put(tree["prior"])
-    tree["prob"] = jnp.array(tree["prob"])
-    tree["prob"] = tree["prob"].at[0].set(1)
-    assign_refs(tree, testdir + "\\model.rseqs.numeric")
+    beta = read_params(testdir + "/model.pars")
+    scalings = read_scalings(testdir + "/model.scs")
+    adj, unk, layer, pr, num_ch = read_taxonomy(testdir + "/taxonomy.priors")
+    refs, ref_lens = read_refs(testdir + "/refs.aln")
+    N = adj.shape[0]
+    R = refs.shape[0]
+    n_refs = assign_refs(testdir + "/model.rseqs.numeric", N, R)
 
-    params = {"beta": beta, "scaling": scalings}
+    start_prob = jnp.zeros(N).at[0].set(1)
+    # creating taxonomic tree data object
+    tax_tree = TaxTree(
+        refs = refs,
+        ref_lens=ref_lens,
+        node_refs=n_refs,
+        layer=layer,
+        prior=pr,
+        prob=start_prob,
+        children=adj,
+        num_ch=num_ch,
+        unk = unk,
+        visit_q=jnp.zeros(N, dtype=int),  # assume the root index is 0
+        q_end=1,
+        visited=0
+    )
 
     # test query
     q = "-ACATTATATTTTATATTTGGAGCTTGAGCTGGGATAGTTGGAACAAGATTAAGAATTCTTATCCGAACTGAACTTGGTACCCCCGGGTCACTTATTGGAGATGACCAGATTTATAATGTAATTGTTACAGCTCACGCTTTTGTTATAATTTTTTTTATAGTTATACCAATTTTAATTGGTGGTTTCGGAAATTGACTTGTCCCATTAATATTAGGGGCACCTGATATAGCCTTCCCCCGAATAAATAACATAAGATTCTGGTTACTCCCCCCATCATTAACCCTTCTTTTAATAAGAAGAATAGTAGAAAGAGGAGCAGGAACAGGTTGAACAGTTTATCCTCCCTTGGCCTCAAATATTGCACATGGAGGGGCATCTGTCGATTTAGCAATTTTTAGTTTACATCTAGCAGGAATCTCCTCTATTTTAGGAGCAGTAAATTTTATTACAACAATTATCAATATACGAGCCCCTCAAATAAGGTTTGACCAAATACCTCTTTTTGTTTGAGCTGTGGGAATCACAGCTCTCCTTCTTCTTCTTTCTCTTCCAGTTTTAGCCGGAGCTATCACTATATTATTAACAGACCGGAATTTAAATACATCATTTTTTGACCCAGCAGGAGGTGGTGATCCTATTTTATACCAACATTTATTT"
     q = jnp.array(get_seq_bits(q))
-    model.seq_dist(q, refs, ref_lens)
     start_time = time.time()
-    model.classify(q, 0, params, tree)
-    # model.seq_dist(q, refs, ref_lens)
+    
+    model.classify(q, tax_tree, beta, scalings)
     print("classification took " + str(time.time() - start_time))
 
-
-    h = 3

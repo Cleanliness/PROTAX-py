@@ -1,86 +1,94 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
-from taxon import *
 import time
-from collections import deque
+from functools import partial
+from tree import TaxTree, HashableArrayWrapper
 
 
-def branch_prob(X, beta, u=1):
-    """
-    Computes the probability vector of each branch contained in X
-    given model parameters and the expected number of unknown taxa
-    in X.
-
-    X: predictors for each branch under a node
-    beta: regression parameters
-    u: expected number of unknown species under the node
-    """
-
-    # applying weight
-    z = jnp.exp(jnp.dot(X, beta))
-    z = z.at[0].set(z.at[0].get()*u)
-    norm_factor = jnp.sum(z)
-    return jnp.divide(z, norm_factor)
-
-
-def classify(query, nid, params, tree):
+def classify(query, tree, beta, scalings):
     """
     Compute probability of all outcomes for this taxonomic tree rooted
     at the node in nid
     """
-    remaining_nodes = deque()
-    remaining_nodes.append(nid)
+    R = tree.refs.shape[0]             # num references
+    N = tree.children.shape[0]         # num nodes
+    dists = seq_dist(query, tree.refs, tree.ref_lens)
 
-    while len(remaining_nodes) > 0:
-        curr = remaining_nodes.popleft()
+    while tree.visited < N:
+        curr = tree.visit_q.at[tree.q_end-1].get()
+        
         # getting relevant children and reference indices
-        start_time = time.time()
-        children = tree["children"][curr]
-        print("Indexing took " + str(time.time() - start_time))
+        curr_childs = jnp.unpackbits(tree.children.take(curr, axis=0))
+        n_c = tree.num_ch.at[curr].get()
+        child_idx = jnp.argwhere(curr_childs, size=n_c).flatten()
+        child_unk = jnp.take(tree.unk, child_idx)
+        c_refs = jnp.unpackbits(tree.node_refs.take(child_idx, axis=0), axis=1)[:, :R]
 
-        # computing probability of all children nodes
-        if len(children) > 0:
-            X = compute_predictors(query, params, tree, curr, children)
-            compute_probs(X, params, tree, nid, children)
+        # get 2 min distances
+        has_refs = jnp.sum(c_refs, axis=1) > 0
+        X = min_two_batch(c_refs, dists)
+        X = jnp.concatenate((jnp.ones((X.shape[0], 1)), X), axis=1)
+
+        # keep only distances of nodes with >1 refs and known
+        X = jnp.multiply(X.T, has_refs)
+        X = jnp.concatenate((jnp.ones((1, X.shape[1])), X), axis=0)
+        X = jnp.multiply(X, jnp.logical_not(child_unk)).T
+        
+        # compute probability of children
+        compute_probs(X, beta, tree, curr, scalings, child_idx)
 
         # add children to queue
-        remaining_nodes.extend(children)
+        tree.visit_q = tree.visit_q.at[tree.q_end:tree.q_end+n_c].set(child_idx)
+        tree.q_end = tree.q_end + n_c
+        print(tree.visited)
+        tree.visited += 1
 
 
-def compute_predictors(query, params, tree, nid, children):
-    # get predictors for children under this node
-    start_time = time.time()
-    X = jnp.ones((len(children), 4))
-    print("X creation took " + str(time.time() - start_time))
 
-    # get probabilities of each child
-    start_time = time.time()
-    for i, c in enumerate(children):
-        refs = tree["node_refs"][c]
-        if tree["unk"].at[nid].get():
-            X = X.at[i, :].set(0)
-        elif refs.size == 0:
-            X = X.at[i, 0:].set(0)
-        else:
-            X = get_predictors(query, c, tree, params, i, refs, X)
-    print("Predictor computation took " + str(time.time() - start_time))
-    return X
+def get_child_idx(child_adj, n_c):
+    child_idx = jnp.argwhere(child_adj, size=n_c).flatten()
+    return child_idx
 
-@jax.jit
-def compute_probs(X, params, tree, nid, children):
+jitted = jax.jit(get_child_idx, static_argnums=(1))
+
+# jax.jit
+def min_two(refs, dists):
+    """
+    minimum 2 seq distance predictor, given a node's references and
+    all sequence distances.
+
+    if no references return [1, 1]
+    in only 1 reference return [min1, min1]
+    Otherwise return [min1, min2]
+    """
+    valid_dists = dists.take(jnp.argwhere(refs, size=refs.shape[0]))
+    valid_dists = jnp.append(valid_dists, 1)
+    valid_dists_reversed = jnp.multiply(valid_dists, -1)
+
+    # take 2 minimum indices
+    _, min_inds = jax.lax.top_k(valid_dists_reversed, 1 + valid_dists.shape[0] >=2)
+    min_inds = jnp.append(min_inds, min_inds.at[0].get())
+
+    # return corresponding distances
+    return valid_dists.take(min_inds).at[:2].get()
+
+min_two_batch = jax.vmap(min_two, (0, None), 0)
+
+
+# @jax.jit
+def compute_probs(X, beta, tree, nid, scalings, c_idx):
+    # get info about node
+    lvl = tree.layer.at[nid].get()
+    beta = beta.at[lvl].get()
+
     # apply bayes rule
-    start_time = time.time()
-    b_probs = branch_prob(X, params["beta"][tree["layer"][nid]].T)
-    b_probs = jnp.multiply(b_probs, tree["prob"].at[nid].get())
-    b_probs = jnp.multiply(b_probs, tree["prior"].take(children))
+    b_probs = branch_prob(X, beta.T)
+    b_probs = jnp.multiply(b_probs, tree.prob.at[nid].get())
+    b_probs = jnp.multiply(b_probs, tree.prior.take(c_idx))
     b_probs = jnp.divide(b_probs, jnp.sum(b_probs))
-    print("probability computation took " + str(time.time() - start_time))
 
     # set probability of children
-    start_time = time.time()
-    tree["prob"] = jnp.insert(tree["prob"], children, b_probs)
-    print("probability assignment took " + str(time.time() - start_time))
+    tree.prob = jnp.insert(tree.prob, c_idx, b_probs)
 
 
 @jax.jit
@@ -108,6 +116,24 @@ def get_predictors(q: jnp.ndarray, nid, tree, params, row, ref_i, X):
     return X
 
 
+def branch_prob(X, beta, u=1):
+    """
+    Computes the probability vector of each branch contained in X
+    given model parameters and the expected number of unknown taxa
+    in X.
+
+    X: predictors for each branch under a node
+    beta: regression parameters
+    u: expected number of unknown species under the node
+    """
+
+    # applying weights
+    z = jnp.exp(jnp.dot(X, beta))
+    z = z.at[0].set(z.at[0].get()*u)
+    norm_factor = jnp.sum(z)
+    return jnp.divide(z, norm_factor)
+
+
 def seq_dist(q, seqs, sizes):
     """
     Computes sequence distance between the query and an array of reference sequences
@@ -118,7 +144,5 @@ def seq_dist(q, seqs, sizes):
 
 
 if __name__ == '__main__':
-    pass
-
-
+    print(jax.devices())
 

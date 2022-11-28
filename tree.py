@@ -1,6 +1,8 @@
 import chex
 from typing import Generic, TypeVar
 import jax.numpy as jnp
+from collections import deque
+import numpy as np
 
 T = TypeVar('T')      # Declare type variable
 
@@ -31,7 +33,7 @@ class TaxTree():
     prior: chex.ArrayDevice          # [N]
     prob: chex.ArrayDevice           # [N]
     children: chex.ArrayDevice       # [N, N] NOTE: these dims are after unpacking along axis 1
-    num_ch: chex.ArrayDevice         # [N]
+    has_refs: chex.ArrayDevice       # [N]
     unk: chex.ArrayDevice            # [N]
     visit_q: chex.ArrayDevice        # [N]
     q_end: int

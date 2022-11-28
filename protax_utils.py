@@ -50,8 +50,8 @@ def read_taxonomy(tdir):
     unks = np.zeros(N, dtype=bool)
     priors = np.zeros(N)
     layers = np.zeros(N, dtype=int)
-    ch_num = np.zeros(N, dtype=int)
-
+    
+    
     for l in node_dat:
         l = l.strip("\n")
 
@@ -69,15 +69,13 @@ def read_taxonomy(tdir):
         unks[nid] = name=="unk"
         layers[nid] = lvl
         priors[nid] = prior
-        ch_num[pid] += 1
     
     # converting to jax
     res = jnp.array(res)
     unks = jnp.array(unks)
     layers = jnp.array(layers)
     priors = jnp.array(priors)
-    ch_num = jnp.array(ch_num)
-    return res, unks, layers, priors, ch_num
+    return res, unks, layers, priors
 
 
 def read_refs(ref_dir):
@@ -115,17 +113,20 @@ def assign_refs(seq2tax_dir, N, R):
 
     R_packed = np.packbits(np.zeros((1, R), dtype=bool), axis=1).shape[1]
     res = np.zeros((N, R_packed), dtype=np.uint8)
+    ref_mask = np.zeros(N, dtype=bool)
 
     # assigning ref seq indices
     for n, l in enumerate(f.readlines()):
         nid, num_refs, ref_idx = l.split('\t')
         nid = int(nid)
+
+        ref_mask[nid] = int(num_refs) > 0
         seqs = np.fromstring(ref_idx, sep=" ").astype(int)
         row = np.unpackbits(res[n])
         row[seqs] = 1
         res[n] = np.packbits(row)
 
-    return jnp.array(res)
+    return jnp.array(res), ref_mask
 
 def get_seq_bits(seq_str):
     """
@@ -148,11 +149,11 @@ if __name__ == "__main__":
     # reading model info
     beta = read_params(testdir + "/model.pars")
     scalings = read_scalings(testdir + "/model.scs")
-    adj, unk, layer, pr, num_ch = read_taxonomy(testdir + "/taxonomy.priors")
+    adj, unk, layer, pr = read_taxonomy(testdir + "/taxonomy.priors")
     refs, ref_lens = read_refs(testdir + "/refs.aln")
     N = adj.shape[0]
     R = refs.shape[0]
-    n_refs = assign_refs(testdir + "/model.rseqs.numeric", N, R)
+    n_refs, has_refs = assign_refs(testdir + "/model.rseqs.numeric", N, R)
 
     start_prob = jnp.zeros(N).at[0].set(1)
     # creating taxonomic tree data object
@@ -164,7 +165,7 @@ if __name__ == "__main__":
         prior=pr,
         prob=start_prob,
         children=adj,
-        num_ch=num_ch,
+        has_refs=has_refs,
         unk = unk,
         visit_q=jnp.zeros(N, dtype=int),  # assume the root index is 0
         q_end=1,
@@ -172,10 +173,43 @@ if __name__ == "__main__":
     )
 
     # test query
-    q = "-ACATTATATTTTATATTTGGAGCTTGAGCTGGGATAGTTGGAACAAGATTAAGAATTCTTATCCGAACTGAACTTGGTACCCCCGGGTCACTTATTGGAGATGACCAGATTTATAATGTAATTGTTACAGCTCACGCTTTTGTTATAATTTTTTTTATAGTTATACCAATTTTAATTGGTGGTTTCGGAAATTGACTTGTCCCATTAATATTAGGGGCACCTGATATAGCCTTCCCCCGAATAAATAACATAAGATTCTGGTTACTCCCCCCATCATTAACCCTTCTTTTAATAAGAAGAATAGTAGAAAGAGGAGCAGGAACAGGTTGAACAGTTTATCCTCCCTTGGCCTCAAATATTGCACATGGAGGGGCATCTGTCGATTTAGCAATTTTTAGTTTACATCTAGCAGGAATCTCCTCTATTTTAGGAGCAGTAAATTTTATTACAACAATTATCAATATACGAGCCCCTCAAATAAGGTTTGACCAAATACCTCTTTTTGTTTGAGCTGTGGGAATCACAGCTCTCCTTCTTCTTCTTTCTCTTCCAGTTTTAGCCGGAGCTATCACTATATTATTAACAGACCGGAATTTAAATACATCATTTTTTGACCCAGCAGGAGGTGGTGATCCTATTTTATACCAACATTTATTT"
+    q = "-ACATTATATTTTATATTTGGAGCTTGAGCTGGGATAGTTGGAACAAGATTAAGAATTCTTATCCGAACTGAACTTGGTACCCCCGGGTCACTTATTGGAGATGACCAGATTTATAATGTAATTGTTACAGCTCACGCTTTTGTTATAATTTTTTTTATAGTTATACCAATTTTAATTGGTGGTTTCGGAAATTGACTTGTCCCATTAATATTAGGGGCACCTGATATAGCCTTCCCCCGAATAAATAACATAAGATTCTGGTTACTCCCCCCATCATTAACCCTTCTTTTAATAAGAAGAATAGTAGAAAGAGGAGCAGGAACAGGTTGAACAGTTTATCCTCCCTTGGCCTCAAATATTGCACATGGAGGGGCATCTGTCGATTTAGCAATTTTTAGTTTACATCTAGCAGGAATCTCCTCTATTTTAGGAGCAGTAAATTTTATTACAACAATTATCAATATACGAGCCCCTCAAATAAGGTTTGACCAAATACCTCTTTTTGTTTGAGCTGTGGGAATCACAGCTCTCCTTCTTCTTCTTTCTCTTCCAGTTTTAGCCGGAGCTATCACTATATTATTAACAGACCGGAATTTAAATACATCATTTTTTGACCCAGCAGGAGGTGGTGATCCTATTTTATACCAACATTTATTT" 
+    q2 = "-AAAATATATTTTATATTTGGAGCTTGAGCTGGGATAGTTGGAACAAGATTAAGAATTCTTATGGGAACTGAACTTGGTACCCCCGGGTCACTTATTGGAGATGACCAGATTTATAATGTAATTGTTACAGCTCACGCTTTTGTTATAATTTTTTTTATAGTTATACCAATTTTAATTGGTGGTTTCGGAAATTGACTTGTCCCATTAATATTAGGGGCACCTGATATAGCCTTCCCCCGAATAAATAACATAAGATTCTGGTTACTCCCCCCATCATTAACCCTTCTTTTAATAAGAAGAATAGTAGAAAGAGGAGCAGGAACAGGTTGAACAGTTTATCCTCCCTTGGCCTCAAATATTGCACATGGAGGGGCATCTGTCGATTTAGCAATTTTTAGTTTACATCTAGCAGGAATCTCCTCTATTTTAGGAGCAGTAAATTTTATTACAACAATTATCAATATACGAGCCCCTCAAATAAGGTTTGACCAAATACCTCTTTTTGTTTGAGCTGTGGGAATCACAGCTCTCCTTCTTCTTCTTTCTCTTCCAGTTTTAGCCGGAGCTATCACTATATTATTAACAGACCGGAATTTAAATACATCATTTTTTGACCCAGCAGGAGGTGGTGATCCTATTTTATACCAACATTTATTT"
     q = jnp.array(get_seq_bits(q))
+    q2 = jnp.array(get_seq_bits(q2))
+    R = tax_tree.refs.shape[0]             # num references
+    N = tax_tree.children.shape[0]         # num nodes
+
     start_time = time.time()
-    
-    model.classify(q, tax_tree, beta, scalings)
+    res = model.classify(q, tax_tree, beta, scalings, N, R)
+    res.block_until_ready()
     print("classification took " + str(time.time() - start_time))
+    print(res.at[:10].get())
+
+    start_time = time.time()
+    res = model.classify(q, tax_tree, beta, scalings, N, R)
+    res.block_until_ready()
+    print("classification took " + str(time.time() - start_time))
+    print(res.at[:10].get())
+
+    # 2nd classification without compilation overhead time
+    tax_tree = TaxTree(
+        refs = refs,
+        ref_lens=ref_lens,
+        node_refs=n_refs,
+        layer=layer,
+        prior=pr,
+        prob=start_prob,
+        children=adj,
+        has_refs=has_refs,
+        unk = unk,
+        visit_q=jnp.zeros(N, dtype=int),  # assume the root index is 0
+        q_end=1,
+        visited=0
+    )
+    start_time = time.time()
+    res = model.classify(q2, tax_tree, beta, scalings, N, R)
+    res.block_until_ready()
+    print("classification took " + str(time.time() - start_time))
+    print(res.at[:10].get())
 

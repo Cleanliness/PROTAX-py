@@ -143,7 +143,7 @@ def get_seq_bits(seq_str):
     return seq_bits
 
 
-if __name__ == "__main__":
+def run_inference_tests():
     testdir = r"/h/royga/Documents/PROTAX-dsets/30k_small"
 
     # reading model info
@@ -180,6 +180,7 @@ if __name__ == "__main__":
     R = tax_tree.refs.shape[0]             # num references
     N = tax_tree.children.shape[0]         # num nodes
 
+    print(f"beginning classification for {N} Nodes")
     start_time = time.time()
     res = model.classify(q, tax_tree, beta, scalings, N, R)
     res.block_until_ready()
@@ -213,3 +214,38 @@ if __name__ == "__main__":
     print("classification took " + str(time.time() - start_time))
     print(res.at[:10].get())
 
+
+if __name__ == "__main__":
+    testdir = r"/h/royga/Documents/PROTAX-dsets/30k_small"
+
+    # reading refs
+    refs, ref_lens = read_refs(testdir + "/refs.aln")
+
+    # test query
+    q = "-ACATTATATTTTATATTTGGAGCTTGAGCTGGGATAGTTGGAACAAGATTAAGAATTCTTATCCGAACTGAACTTGGTACCCCCGGGTCACTTATTGGAGATGACCAGATTTATAATGTAATTGTTACAGCTCACGCTTTTGTTATAATTTTTTTTATAGTTATACCAATTTTAATTGGTGGTTTCGGAAATTGACTTGTCCCATTAATATTAGGGGCACCTGATATAGCCTTCCCCCGAATAAATAACATAAGATTCTGGTTACTCCCCCCATCATTAACCCTTCTTTTAATAAGAAGAATAGTAGAAAGAGGAGCAGGAACAGGTTGAACAGTTTATCCTCCCTTGGCCTCAAATATTGCACATGGAGGGGCATCTGTCGATTTAGCAATTTTTAGTTTACATCTAGCAGGAATCTCCTCTATTTTAGGAGCAGTAAATTTTATTACAACAATTATCAATATACGAGCCCCTCAAATAAGGTTTGACCAAATACCTCTTTTTGTTTGAGCTGTGGGAATCACAGCTCTCCTTCTTCTTCTTTCTCTTCCAGTTTTAGCCGGAGCTATCACTATATTATTAACAGACCGGAATTTAAATACATCATTTTTTGACCCAGCAGGAGGTGGTGATCCTATTTTATACCAACATTTATTT" 
+    q = jnp.array(get_seq_bits(q))
+
+    jit_times = []
+    nojit_times = []
+    for times in range(4):
+        for i in range(times):
+            refs = jnp.concatenate((refs, refs), axis=0)
+            ref_lens = jnp.concatenate((ref_lens, ref_lens), axis=0)
+
+        # with jit compilation time
+        jitted = jax.jit(model.seq_dist)
+        start_time = time.time()
+        jitted(q, refs, ref_lens).block_until_ready()
+        res_time = time.time() - start_time
+        jit_times.append(res_time)
+        print("distance (with jit) took " + str(res_time))
+
+        # without jit
+        start_time = time.time()
+        jitted(q, refs, ref_lens).block_until_ready()
+        res_time = time.time() - start_time
+        nojit_times.append(res_time)
+        print("distance (without jit) took " + str(res_time))
+    
+    print(f"jit times: {jit_times}")
+    print(f"no jit times {nojit_times}")

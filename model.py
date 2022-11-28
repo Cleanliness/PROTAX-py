@@ -44,7 +44,7 @@ def classify(query, tree, beta, scalings, N, R):
     return probs
 
 
-@partial(jax.jit, static_argnums=(2))
+# @partial(jax.jit, static_argnums=(2))
 def get_min2(refs, dists, R):
     """
     Compute the minimum two sequence distances given a boolean array

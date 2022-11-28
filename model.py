@@ -44,6 +44,7 @@ def classify(query, tree, beta, scalings, N, R):
     return probs
 
 
+@partial(jax.jit, static_argnums=(2))
 def get_min2(refs, dists, R):
     """
     Compute the minimum two sequence distances given a boolean array
@@ -52,8 +53,17 @@ def get_min2(refs, dists, R):
     refs = jnp.unpackbits(refs).at[:R].get()
     refs_neg = jnp.multiply(jnp.logical_not(refs), 2)
     dists = jnp.multiply(refs, dists)
-    dists_rev = jnp.multiply(jnp.add(dists, refs_neg), -1)
-    _, min_inds = jax.lax.top_k(dists_rev, 2)
+    dists_rev = jnp.add(dists, refs_neg)
+    
+    # _, min_inds = jax.lax.approx_min_k(dists_rev, 2)
+    
+    # TODO: change naive top-2 implementation
+    # JAX's implementation of top k is very slow for some reason (issue #9940 on github)
+    # _, min_inds = jax.lax.approx_min_k(dists_rev, 2)
+    i1 = jnp.argmin(dists_rev)
+    dists_rev = dists_rev.at[i1].set(-2)
+    i2 = jnp.argmin(dists_rev)
+    min_inds = jnp.array((i1, i2))
 
     res = dists.take(min_inds)
     return res
